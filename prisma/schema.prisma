@@ -1,0 +1,84 @@
+datasource db {
+  provider = "postgresql"
+  
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 1. Modelo Central de Armamentos e Munições
+model MaterialBelico {
+  id                 String   @id @default(uuid())
+  tipoMaterial       String   // "ARMA" ou "MUNICAO"
+  
+  // Identificadores (Armas usam Série/Patrimônio | Munições usam Lote)
+  serie              String?  @unique // Ex: DD-123456 (Fuzil) ou null para munições
+  patrimonio         String?  @unique // Tombo da carga do Estado
+  lote               String?  // Ex: CBC-A2025 (Munição) ou null para armas
+  
+  // Características Técnicas
+  equipamento        String   // Nome/Modelo (Ex: Fuzil Daniel Defense MK18, Pistola APX, Cartucho 5.56mm)
+  calibre            String   // Ex: 5.56x45mm NATO, 9x19mm Parabellum
+  tipo               String   // Ex: Operacional, Treinamento, Traçante
+  
+  // Alocação e Responsabilidade
+  cia                String   // Localização/Subunidade atual (Ex: Almoxarifado P4, 1ª Cia, Força Tática)
+  status             String   @default("Operacional") // Ex: Operacional, Em Cautela, Manutenção, Estoque Seguro, Crítico
+  responsavel        String?  // Nome/Patente do militar com a cautela fixa, se houver
+
+  // Dados de Estoque (Focado no controle volumétrico de munições)
+  quantidadeTotal    Int      @default(1) // Para armas é 1, para munição é o saldo total
+  almoxarifado       Int      @default(0) // Quantidade guardada na Reserva Central
+  distribuido        Int      @default(0) // Quantidade distribuída nas Cias
+  
+  // Controle Cronológico e Legal
+  dataFabricacao     DateTime?  
+  dataValidade       DateTime?  
+  documentoAmparo    String?  // Nota de Empenho, BCS, Boletim Interno, etc.
+  
+  observacoes        String?  @db.Text
+  dataCriacao        DateTime @default(now())
+  atualizadoEm       DateTime @updatedAt
+
+  // Relacionamentos
+  historicos         Historico[]
+
+  @@map("materiais_belicos")
+}
+
+// 2. Livro de Registro de Movimentações / Cadeia de Custódia
+model Historico {
+  id               String         @id @default(uuid())
+  data             DateTime       @default(now())
+  titulo           String         // Ex: "Baixa por Consumo", "Cautela de Armamento", "Transferência de Carga"
+  descricao        String         @db.Text // Detalhes (Ex: "Consumido em Instrução de Tiro Noturno...")
+  tipo             String         @default("info") // "info", "baixa", "cautela", "alerta"
+  quantidadeMov    Int            @default(1) // Quantidade de munições abatidas ou armas movimentadas
+  origemMov        String?        // De onde saiu o material (Ex: Almoxarifado P4)
+
+  // Relacionamento com o Material Bélico
+  materialBelicoId String
+  materialBelico   MaterialBelico @relation(fields: [materialBelicoId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com o Operador do Sistema (Quem registrou no software)
+  usuarioId        String?
+  usuario          Usuario?       @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@index([materialBelicoId])
+  @@index([usuarioId])
+  @@map("historicos_movimentacao")
+}
+
+// 3. Usuários / Operadores do Sistema P4
+model Usuario {
+  id          String      @id @default(uuid())
+  nome        String      // Nome de guerra e posto (Ex: Cap PM Rodrigues)
+  email       String      @unique
+  senha       String
+  dataCriacao DateTime    @default(now())
+
+  historicos  Historico[]
+
+  @@map("usuarios_sistema")
+}
