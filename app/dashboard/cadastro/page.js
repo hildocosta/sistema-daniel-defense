@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Sidebar from "@/components/Sidebar/page";
+import { toast } from "sonner";
 import { 
   PlusCircle, 
   ChevronRight, 
@@ -16,26 +17,22 @@ import {
 export default function CadastroMaterialPage() {
   const [step, setStep] = useState(1);
   const [tipoMaterial, setTipoMaterial] = useState("fuzil"); // "fuzil" ou "municao"
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Estado do formulário unificado
   const [formData, setFormData] = useState({
-    // Step 1: Tipo de Material comum
-    // Step 2: Especificações Técnicas (Fuzil)
     numeroSerie: "",
     modelo: "Daniel Defense M4A1 V7",
-    calibreArma: "5.56x45mm NATO",
-    comprimentoCano: "14.5\"",
-    // Step 2: Especificações Técnicas (Munição)
+    calibreArma: "5.56x45mm",
+    comprimentoCano: '14.5"',
     loteCodigo: "",
-    calibreMunicao: "5.56x45mm NATO",
+    calibreMunicao: "5.56x45mm",
     tipoProjetil: "Operacional (Comum)",
-    // Step 3: Quantitativos e Logística
     quantidadeRecebida: "",
     carregadoresInclusos: "3",
-    localArmazenamento: "Almoxarifado Central (P4)",
-    // Step 4: Notas Fiscais e Origem
+    localArmazenamento: "Almoxarifado (P4)",
     documentoOrigem: "",
-    armeiroResponsavel: "Sgt PM Silva",
+    armeiroResponsavel: "Sd. QP PM Hildo",
     observacoes: ""
   });
 
@@ -44,17 +41,105 @@ export default function CadastroMaterialPage() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const nextStep = () => setStep(prev => Math.min(prev + 1, 4));
-  const prevStep = () => setStep(prev => Math.max(prev - 1, 1));
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    alert(`Material cadastrado com sucesso no sistema do 17º BPM!\nTipo: ${tipoMaterial.toUpperCase()}`);
-    // Aqui entraria a chamada de API para salvar no banco de dados
-    setStep(1);
+  // FUNÇÃO DE VALIDAÇÃO POR ETAPA (Trava o avanço se faltar dado)
+  const isStepValid = () => {
+    if (step === 1) {
+      // Categoria sempre começa selecionada ("fuzil" ou "municao")
+      return !!tipoMaterial;
+    }
+    if (step === 2) {
+      if (tipoMaterial === "fuzil") {
+        return formData.numeroSerie.trim() !== "" && formData.modelo.trim() !== "";
+      } else {
+        return formData.loteCodigo.trim() !== "" && formData.calibreMunicao.trim() !== "";
+      }
+    }
+    if (step === 3) {
+      if (tipoMaterial === "municao") {
+        return formData.quantidadeRecebida.trim() !== "" && formData.localArmazenamento.trim() !== "";
+      } else {
+        return formData.carregadoresInclusos.trim() !== "" && formData.localArmazenamento.trim() !== "";
+      }
+    }
+    if (step === 4) {
+      return formData.documentoOrigem.trim() !== "";
+    }
+    return true;
   };
 
-  // Títulos e Subtítulos dos passos dinâmicos
+  const nextStep = () => {
+    if (!isStepValid()) {
+      toast.warning("Por favor, preencha todos os campos obrigatórios deste passo.");
+      return;
+    }
+    setStep(prev => Math.min(prev + 1, 4));
+  };
+  
+  const prevStep = () => setStep(prev => Math.max(prev - 1, 1));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Segunda barreira de segurança na submissão final
+    if (step !== 4 || !isStepValid()) {
+      toast.error("Formulário incompleto. Revise os passos anteriores.");
+      return;
+    }
+
+    if (isSubmitting) return;
+
+    setIsSubmitting(true);
+    const toastId = toast.loading("Registrando material no sistema P4...");
+
+    try {
+      const response = await fetch("/api/material", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          tipoMaterial,
+          ...formData,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Falha ao registrar o lote ou armamento.");
+      }
+
+      toast.success(
+        `${tipoMaterial === "fuzil" ? "Armamento" : "Lote de munição"} tombado com sucesso!`, 
+        { id: toastId }
+      );
+
+      // Reseta o formulário e volta para a primeira etapa
+      setFormData({
+        numeroSerie: "",
+        modelo: "Daniel Defense M4A1 V7",
+        calibreArma: "5.56x45mm",
+        comprimentoCano: '14.5"',
+        loteCodigo: "",
+        calibreMunicao: "5.56x45mm",
+        tipoProjetil: "Operacional (Comum)",
+        quantidadeRecebida: "",
+        carregadoresInclusos: "3",
+        localArmazenamento: "Almoxarifado (P4)",
+        documentoOrigem: "",
+        armeiroResponsavel: "Sd. QP PM Hildo",
+        observacoes: ""
+      });
+      setStep(1);
+
+    } catch (error) {
+      console.error("Erro no cadastro:", error);
+      toast.error(error.message || "Erro operacional no servidor.", { id: toastId });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const stepTitles = [
     { title: "Classificação", desc: "Origem do material" },
     { title: "Especificações", desc: "Dados técnicos e série" },
@@ -113,7 +198,7 @@ export default function CadastroMaterialPage() {
 
         {/* Área Centralizadora do Formulário */}
         <div className="flex-1 bg-slate-950/20 border border-slate-800 rounded-xl overflow-hidden flex flex-col min-h-0">
-          <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between min-h-0 container-sombrio overflow-y-auto p-6">
+          <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between min-h-0 overflow-y-auto p-6">
             
             {/* STEP 1: CLASSIFICAÇÃO */}
             {step === 1 && (
@@ -126,9 +211,10 @@ export default function CadastroMaterialPage() {
                 </div>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div 
+                  <button 
+                    type="button"
                     onClick={() => setTipoMaterial("fuzil")}
-                    className={`p-5 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-4 ${
+                    className={`p-5 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-4 text-left w-full ${
                       tipoMaterial === "fuzil" 
                         ? "bg-blue-600/10 border-blue-500 shadow-lg shadow-blue-500/5 text-white" 
                         : "bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700"
@@ -136,14 +222,15 @@ export default function CadastroMaterialPage() {
                   >
                     <ShieldAlert size={24} className={tipoMaterial === "fuzil" ? "text-blue-400" : "text-slate-500"} />
                     <div>
-                      <p className="text-xs font-bold uppercase tracking-wide text-white">Armamento de Fogo Central</p>
-                      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">Cadastro individualizado de plataformas de assalto (Fuzis Daniel Defense, plataformas M4, miras táticas embutidas).</p>
+                      <p className="text-xs font-bold uppercase tracking-wide text-white">Armamento de Fogo Central *</p>
+                      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">Cadastro individualizado de plataformas de assalto.</p>
                     </div>
-                  </div>
+                  </button>
 
-                  <div 
+                  <button 
+                    type="button"
                     onClick={() => setTipoMaterial("municao")}
-                    className={`p-5 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-4 ${
+                    className={`p-5 rounded-xl border transition-all duration-200 cursor-pointer flex items-start gap-4 text-left w-full ${
                       tipoMaterial === "municao" 
                         ? "bg-blue-600/10 border-blue-500 shadow-lg shadow-blue-500/5 text-white" 
                         : "bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700"
@@ -151,10 +238,10 @@ export default function CadastroMaterialPage() {
                   >
                     <PackagePlus size={24} className={tipoMaterial === "municao" ? "text-blue-400" : "text-slate-500"} />
                     <div>
-                      <p className="text-xs font-bold uppercase tracking-wide text-white">Lote Coletivo de Munições</p>
-                      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">Entrada volumétrica de cartuchos por lote de fabricação (CBC, NATO standard, caixas fechadas, munições de treinamento ou reais).</p>
+                      <p className="text-xs font-bold uppercase tracking-wide text-white">Lote Coletivo de Munições *</p>
+                      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">Entrada volumétrica de cartuchos por lote.</p>
                     </div>
-                  </div>
+                  </button>
                 </div>
               </div>
             )}
@@ -172,15 +259,15 @@ export default function CadastroMaterialPage() {
                 {tipoMaterial === "fuzil" ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Número de Série (Gravado no Baixo Receptor) *</label>
+                      <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Número de Série (Baixo Receptor) *</label>
                       <input 
                         type="text" name="numeroSerie" required placeholder="Ex: DD-998877X" value={formData.numeroSerie} onChange={handleInputChange}
                         className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white uppercase focus:outline-none focus:border-blue-500/50"
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Modelo Comercial</label>
-                      <select name="modelo" value={formData.modelo} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-blue-500/50">
+                      <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Modelo Comercial *</label>
+                      <select name="modelo" required value={formData.modelo} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-blue-500/50">
                         <option value="Daniel Defense M4A1 V7">Daniel Defense M4A1 V7</option>
                         <option value="Daniel Defense DDM4 V7 LW">Daniel Defense DDM4 V7 LW</option>
                         <option value="Daniel Defense MK18">Daniel Defense MK18</option>
@@ -205,10 +292,10 @@ export default function CadastroMaterialPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Calibre do Lote</label>
-                      <select name="calibreMunicao" value={formData.calibreMunicao} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-blue-500/50">
-                        <option value="5.56x45mm NATO">5.56x45mm NATO</option>
-                        <option value="9x19mm Parabellum">9x19mm Parabellum</option>
+                      <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Calibre do Lote *</label>
+                      <select name="calibreMunicao" required value={formData.calibreMunicao} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-blue-500/50">
+                        <option value="5.56x45mm NATO">5.56x45mm</option>
+                        <option value="9x19mm Parabellum">9x19mm</option>
                         <option value=".40 S&W">.40 S&W</option>
                         <option value="12 GA">12 GA</option>
                       </select>
@@ -216,9 +303,9 @@ export default function CadastroMaterialPage() {
                     <div className="sm:col-span-2">
                       <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Especificação do Projétil</label>
                       <select name="tipoProjetil" value={formData.tipoProjetil} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-blue-500/50">
-                        <option value="Operacional (Comum)">Operacional (Comum)</option>
+                        <option value="Operacional (Comum)">COMUM M193 - 55GR</option>
+                        <option value="Operacional (Comum)">OTM (HPBT) - 77GR</option>
                         <option value="Traçante">Traçante</option>
-                        <option value="Treinamento (Frangível)">Treinamento (Frangível)</option>
                         <option value="Menos Que Letal (Borracha)">Menos Que Letal (Borracha)</option>
                       </select>
                     </div>
@@ -238,7 +325,7 @@ export default function CadastroMaterialPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {tipoMaterial === "municao" ? (
                     <div>
-                      <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Quantidade de Cartuchos (unidades) *</label>
+                      <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Quantidade de Cartuchos *</label>
                       <input 
                         type="number" name="quantidadeRecebida" required placeholder="Ex: 5000" value={formData.quantidadeRecebida} onChange={handleInputChange}
                         className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500/50"
@@ -246,13 +333,13 @@ export default function CadastroMaterialPage() {
                     </div>
                   ) : (
                     <div>
-                      <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Carregadores Inclusos por Plataforma</label>
-                      <input type="number" name="carregadoresInclusos" value={formData.carregadoresInclusos} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500/50" />
+                      <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Carregadores Inclusos *</label>
+                      <input type="number" name="carregadoresInclusos" required value={formData.carregadoresInclusos} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500/50" />
                     </div>
                   )}
                   <div>
-                    <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Destinação de Prateleira (Paiol Físico)</label>
-                    <input type="text" name="localArmazenamento" value={formData.localArmazenamento} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500/50" />
+                    <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Destinação de Prateleira (Paiol Físico) *</label>
+                    <input type="text" name="localArmazenamento" required value={formData.localArmazenamento} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500/50" />
                   </div>
                 </div>
               </div>
@@ -265,39 +352,38 @@ export default function CadastroMaterialPage() {
                   <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
                     <FileText size={14} className="text-blue-500" /> Autenticidade e Notas Fiscais
                   </h3>
-                  <p className="text-xs text-slate-400 mt-1">Último estágio do processo. Vincule o documento oficial e confira o resumo tático.</p>
+                  <p className="text-xs text-slate-400 mt-1">Último estágio do processo. Vincule o documento oficial e confira o resumo.</p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                   <div>
-                    <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Nº do Boletim Interno / Nota de Empenho</label>
-                    <input type="text" name="documentoOrigem" placeholder="Ex: BI nº 42/2026" value={formData.documentoOrigem} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500/50" />
+                    <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Nº do Boletim Interno / Nota de Empenho *</label>
+                    <input type="text" name="documentoOrigem" required placeholder="Ex: BI nº 42/2026" value={formData.documentoOrigem} onChange={handleInputChange} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500/50" />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Armeiro Recebedor (Operador Atual)</label>
+                    <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Armeiro Recebedor</label>
                     <input type="text" disabled value={formData.armeiroResponsavel} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-500 font-bold" />
                   </div>
                   <div className="sm:col-span-2">
-                    <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Observações Adicionais / Acessórios Acoplados</label>
-                    <textarea name="observacoes" rows="2" value={formData.observacoes} onChange={handleInputChange} placeholder="Ex: Fuzil recebido com bandoleira original e miras Magpul de polímero..." className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500/50 resize-none" />
+                    <label className="block text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1.5">Observações Adicionais</label>
+                    <textarea name="observacoes" rows="2" value={formData.observacoes} onChange={handleInputChange} placeholder="Ex: Acessórios inclusos..." className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500/50 resize-none" />
                   </div>
                 </div>
 
-                {/* Resumo Rápido de Segurança */}
                 <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-[11px] leading-relaxed text-slate-400">
                   <span className="font-bold text-blue-400">Resumo da Carga:</span> Gravando entrada de um(a) <span className="text-white font-bold">{tipoMaterial.toUpperCase()}</span> modelo <span className="text-white font-bold">{tipoMaterial === "fuzil" ? formData.modelo : formData.calibreMunicao}</span> identificação <span className="text-white font-mono font-bold">{tipoMaterial === "fuzil" ? formData.numeroSerie || "NÃO INFORMADO" : formData.loteCodigo || "NÃO INFORMADO"}</span>.
                 </div>
               </div>
             )}
 
-            {/* Controle de Navegação Inferior (Alinhado) */}
+            {/* Controle de Navegação Inferior */}
             <div className="pt-4 border-t border-slate-800/60 mt-6 flex justify-between items-center shrink-0">
               <button
                 type="button"
                 onClick={prevStep}
-                disabled={step === 1}
+                disabled={step === 1 || isSubmitting}
                 className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 border cursor-pointer ${
-                  step === 1 
+                  step === 1 || isSubmitting
                     ? "opacity-30 border-slate-800 text-slate-600 cursor-not-allowed" 
                     : "bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800"
                 }`}
@@ -307,18 +393,24 @@ export default function CadastroMaterialPage() {
 
               {step < 4 ? (
                 <button
-                  type="button"
+                  type="button" 
                   onClick={nextStep}
-                  className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider bg-blue-600 hover:bg-blue-500 text-white transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-blue-600/10"
+                  // Opocional: estiliza o botão desativado visualmente caso queira desabilitar o clique completamente
+                  className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider text-white transition-all flex items-center gap-2 cursor-pointer shadow-md ${
+                    !isStepValid() ? "bg-blue-600/50 cursor-not-allowed opacity-60" : "bg-blue-600 hover:bg-blue-500 shadow-blue-600/10"
+                  }`}
                 >
                   Avançar <ChevronRight size={14} />
                 </button>
               ) : (
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-widest bg-gradient-to-tr from-blue-600 to-blue-400 hover:scale-[1.02] text-white transition-all cursor-pointer shadow-lg shadow-blue-500/20"
+                  disabled={isSubmitting || !isStepValid()}
+                  className={`px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-widest bg-gradient-to-tr from-blue-600 to-blue-400 text-white transition-all shadow-lg shadow-blue-500/20 ${
+                    isSubmitting || !isStepValid() ? "opacity-50 cursor-not-allowed" : "hover:scale-[1.02] cursor-pointer"
+                  }`}
                 >
-                  Concluir Cadastro
+                  {isSubmitting ? "Gravando..." : "Concluir Cadastro"}
                 </button>
               )}
             </div>
